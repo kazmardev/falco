@@ -1,70 +1,102 @@
+---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
-  name: falco-cluster-role
+  name: falco
   labels:
-    app: falco-example
-    role: security
+    app: falco
 rules:
-  - apiGroups: ["extensions",""]
-    resources: ["nodes","namespaces","pods","replicationcontrollers","replicasets","services","daemonsets","deployments","events","configmaps"]
-    verbs: ["get","list","watch"]
-  - nonResourceURLs: ["/healthz", "/healthz/*"]
-    verbs: ["get"]
+  - apiGroups:
+      - extensions
+      - ""
+    resources:
+      - nodes
+      - namespaces
+      - pods
+      - replicationcontrollers
+      - replicasets
+      - services
+      - daemonsets
+      - deployments
+      - events
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+  - nonResourceURLs:
+      - /healthz
+      - /healthz/*
+    verbs:
+      - get
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
-  name: falco-cluster-role-binding
-  namespace: default
+  name: falco
   labels:
-    app: falco-example
-    role: security
+    app: falco
 subjects:
   - kind: ServiceAccount
-    name: falco-account
-    namespace: falco-security
+    name: falco
+    namespace: falco
 roleRef:
   kind: ClusterRole
-  name: falco-cluster-role
+  name: falco
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: falco-account
+  name: falco
   labels:
-    app: falco-example
-    role: security
+    app: falco
 ---
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: falco-daemonset
+  name: falco
   labels:
-    app: falco-example
-    role: security
+    app: falco
 spec:
+  selector:
+    matchLabels:
+      app: falco
+      role: security
   template:
     metadata:
+      name: falco
       labels:
-        app: falco-example
+        app: falco
         role: security
     spec:
-      serviceAccount: falco-account
+      serviceAccountName: falco
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/master
       containers:
         - name: falco
-          image: falcosecurity/falco:latest
+          image: docker.io/falcosecurity/falco:0.19.0
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              cpu: 200m
+              memory: 1024Mi
+            requests:
+              cpu: 100m
+              memory: 512Mi
           securityContext:
             privileged: true
-# Uncomment the 3 lines below to enable eBPF support for Falco.
-# This allows Falco to run on Google COS.
-# Leave blank for the default probe location, or set to the path
-# of a precompiled probe.
-#          env:
-#          - name: SYSDIG_BPF_PROBE
-#            value: ""
-          args: [ "/usr/bin/falco", "--cri", "/host/run/containerd/containerd.sock", "-K", "/var/run/secrets/kubernetes.io/serviceaccount/token", "-k", "https://$(KUBERNETES_SERVICE_HOST)", "-pk"]
+          args:
+            - /usr/bin/falco
+            - --cri
+            - /host/run/containerd/containerd.sock
+            - -K
+            - /var/run/secrets/kubernetes.io/serviceaccount/token
+            - -k
+            - "https://$(KUBERNETES_SERVICE_HOST)"
+            - -pk
+          env:
           volumeMounts:
             - mountPath: /host/var/run/docker.sock
               name: docker-socket
@@ -85,12 +117,14 @@ spec:
             - mountPath: /host/usr
               name: usr-fs
               readOnly: true
-            - mountPath: /host/etc/
-              name: etc-fs
-              readOnly: true
+            - mountPath: /dev/shm
+              name: dshm
             - mountPath: /etc/falco
-              name: falco-config
+              name: config-volume
       volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
         - name: docker-socket
           hostPath:
             path: /var/run/docker.sock
@@ -112,12 +146,9 @@ spec:
         - name: usr-fs
           hostPath:
             path: /usr
-        - name: etc-fs
-          hostPath:
-            path: /etc
-        - name: falco-config
+        - name: config-volume
           configMap:
-            name: falco-config
+            name: falco
             items:
               - key: falco.yaml
                 path: falco.yaml
@@ -129,17 +160,18 @@ spec:
                 path: rules.available/application_rules.yaml
               - key: k8s_audit_rules.yaml
                 path: k8s_audit_rules.yaml
+  updateStrategy:
+    type: RollingUpdate
 ---
 kind: Service
 apiVersion: v1
 metadata:
-  name: falco-service
+  name: falco
   labels:
-    app: falco-example
-    role: security
+    app: falco
 spec:
   selector:
-    app: falco-example
+    app: falco
   ports:
   - protocol: TCP
     port: 8765
