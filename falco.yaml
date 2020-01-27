@@ -39,7 +39,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: falco
-    namespace: falco
+    namespace: audit-system
 roleRef:
   kind: ClusterRole
   name: falco
