@@ -24,11 +24,30 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - apps
+    resources:
+      - daemonsets
+      - deployments
+      - replicasets
+      - statefulsets
+    verbs:
+      - get
+      - list
+      - watch
   - nonResourceURLs:
       - /healthz
       - /healthz/*
     verbs:
       - get
+  - apiGroups:
+      - extensions
+    resources:
+      - podsecuritypolicies
+    resourceNames:
+      - falco
+    verbs:
+      - use
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
@@ -76,7 +95,7 @@ spec:
           key: node-role.kubernetes.io/master
       containers:
         - name: falco
-          image: docker.io/falcosecurity/falco:0.19.0
+          image: docker.io/falcosecurity/falco:0.25.0
           imagePullPolicy: IfNotPresent
           resources:
             limits:
@@ -90,7 +109,7 @@ spec:
           args:
             - /usr/bin/falco
             - --cri
-            - /host/run/containerd/containerd.sock
+            - /run/containerd/containerd.sock
             - -K
             - /var/run/secrets/kubernetes.io/serviceaccount/token
             - -k
@@ -113,12 +132,14 @@ spec:
               readOnly: true
             - mountPath: /host/lib/modules
               name: lib-modules
-              readOnly: true
             - mountPath: /host/usr
               name: usr-fs
               readOnly: true
             - mountPath: /dev/shm
               name: dshm
+            - mountPath: /host/etc
+              name: etc-fs
+              readOnly: true
             - mountPath: /etc/falco
               name: config-volume
       volumes:
@@ -146,6 +167,9 @@ spec:
         - name: usr-fs
           hostPath:
             path: /usr
+        - name: etc-fs
+          hostPath:
+            path: /etc
         - name: config-volume
           configMap:
             name: falco
@@ -162,6 +186,26 @@ spec:
                 path: k8s_audit_rules.yaml
   updateStrategy:
     type: RollingUpdate
+---
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: falco
+  labels:
+    app: falco
+spec:
+  privileged: true
+  hostNetwork: true
+  allowedCapabilities: ['*']
+  fsGroup:
+    rule: RunAsAny
+  runAsUser:
+    rule: RunAsAny
+  seLinux:
+    rule: RunAsAny
+  supplementalGroups:
+    rule: RunAsAny
+  volumes: ['*']
 ---
 kind: Service
 apiVersion: v1
