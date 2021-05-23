@@ -1,6 +1,14 @@
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: falco
+  namespace: audit-system
+  labels:
+    app: falco
+---
 kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: falco
   labels:
@@ -41,7 +49,7 @@ rules:
     verbs:
       - get
   - apiGroups:
-      - extensions
+      - policy
     resources:
       - podsecuritypolicies
     resourceNames:
@@ -49,8 +57,28 @@ rules:
     verbs:
       - use
 ---
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: falco
+  labels:
+    app: falco
+spec:
+  privileged: true
+  hostNetwork: true
+  allowedCapabilities: ['*']
+  fsGroup:
+    rule: RunAsAny
+  runAsUser:
+    rule: RunAsAny
+  seLinux:
+    rule: RunAsAny
+  supplementalGroups:
+    rule: RunAsAny
+  volumes: ['*']
+---
 kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: falco
   labels:
@@ -64,17 +92,27 @@ roleRef:
   name: falco
   apiGroup: rbac.authorization.k8s.io
 ---
+kind: Service
 apiVersion: v1
-kind: ServiceAccount
 metadata:
   name: falco
+  namespace: audit-system
   labels:
     app: falco
+spec:
+  type: NodePort
+  selector:
+    app: falco
+  ports:
+  - protocol: TCP
+    port: 8765
+    nodePort: 32765
 ---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: falco
+  namespace: audit-system
   labels:
     app: falco
 spec:
@@ -95,11 +133,11 @@ spec:
           key: node-role.kubernetes.io/master
       containers:
         - name: falco
-          image: docker.io/falcosecurity/falco:0.25.0
+          image: docker.io/falcosecurity/falco:0.28.1
           imagePullPolicy: IfNotPresent
           resources:
             limits:
-              cpu: 200m
+              cpu: 1000m
               memory: 1024Mi
             requests:
               cpu: 100m
@@ -116,6 +154,8 @@ spec:
             - "https://$(KUBERNETES_SERVICE_HOST)"
             - -pk
           env:
+            - name: TZ
+              value: Europe/Warsaw
           volumeMounts:
             - mountPath: /host/var/run/docker.sock
               name: docker-socket
@@ -135,17 +175,12 @@ spec:
             - mountPath: /host/usr
               name: usr-fs
               readOnly: true
-            - mountPath: /dev/shm
-              name: dshm
             - mountPath: /host/etc
               name: etc-fs
               readOnly: true
             - mountPath: /etc/falco
               name: config-volume
       volumes:
-        - name: dshm
-          emptyDir:
-            medium: Memory
         - name: docker-socket
           hostPath:
             path: /var/run/docker.sock
@@ -186,36 +221,3 @@ spec:
                 path: k8s_audit_rules.yaml
   updateStrategy:
     type: RollingUpdate
----
-apiVersion: policy/v1beta1
-kind: PodSecurityPolicy
-metadata:
-  name: falco
-  labels:
-    app: falco
-spec:
-  privileged: true
-  hostNetwork: true
-  allowedCapabilities: ['*']
-  fsGroup:
-    rule: RunAsAny
-  runAsUser:
-    rule: RunAsAny
-  seLinux:
-    rule: RunAsAny
-  supplementalGroups:
-    rule: RunAsAny
-  volumes: ['*']
----
-kind: Service
-apiVersion: v1
-metadata:
-  name: falco
-  labels:
-    app: falco
-spec:
-  selector:
-    app: falco
-  ports:
-  - protocol: TCP
-    port: 8765

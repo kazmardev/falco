@@ -1,3 +1,7 @@
-    - --audit-dynamic-configuration
-    - --feature-gates=DynamicAuditing=true
-    - --runtime-config=auditregistration.k8s.io/v1alpha1=true
+    - --audit-log-maxage=30
+    - --audit-log-maxbackup=5
+    - --audit-log-maxsize=100
+    - --audit-log-path=/var/log/audit/kube-apiserver-audit.log
+    - --audit-policy-file=/etc/kubernetes/audit-policy/apiserver-audit-policy.yaml
+    - --audit-webhook-batch-max-wait=5s
+    - --audit-webhook-config-file=/etc/kubernetes/audit-policy/audit-webhook.yml
